@@ -6,6 +6,7 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:audiobluetooth/wav_header.dart';
 // import 'package:flutter_bluetooth_seria_changed/flutter_bluetooth_serial.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:flutter_sound/flutter_sound.dart';
 import 'package:flutter_sound/public/flutter_sound_player.dart';
 import 'package:async/async.dart';
 
@@ -45,34 +46,45 @@ class _DetailPageState extends State<DetailPage> {
   List<List<int>> chunks = <List<int>>[];
   int contentLength = 0;
   Uint8List? _bytes;
-  PlayerController controller = PlayerController();                   // Initialise
-
+  PlayerController controller = PlayerController();// Initialise
 
   RestartableTimer? _timer;
   RecordState _recordState = RecordState.stopped;
   DateFormat dateFormat = DateFormat("yyyy-MM-dd_HH_mm_ss");
+  Uint8List? dataStream;
 
   List<FileSystemEntity> files = <FileSystemEntity>[];
   String? selectedFilePath;
   final player = FlutterSoundPlayer();
+  final streamPlayer=FlutterSoundPlayer();
 
 
   @override
   void initState() {
     super.initState();
     player.openPlayer();
+    streamPlayer.openPlayer();
     _getBTConnection();
     _timer = RestartableTimer(const Duration(seconds: 1), _completeByte);
     _listofFiles();
     selectedFilePath = '';
+    initStreamPlayer();
   }
-
+  void initStreamPlayer()async{
+    await streamPlayer.startPlayerFromStream(
+      codec: Codec.pcm16,
+      numChannels: 1,
+      sampleRate: 44100
+    );
+    streamPlayer.setVolume(1.0);
+  }
   @override
   void dispose() {
     if (isConnected) {
       isDisconnecting = true;
       connection!.dispose();
       connection = null;
+
     }
     _timer!.cancel();
     super.dispose();
@@ -109,10 +121,10 @@ class _DetailPageState extends State<DetailPage> {
     _bytes = Uint8List(contentLength);
     int offset = 0;
     for (final List<int> chunk in chunks) {
+      // streamPlayer.feedFromStream(Unit8List.fromList(chunk));
       _bytes!.setRange(offset, offset + chunk.length, chunk);
       offset += chunk.length;
     }
-
     final file = await _makeNewFile;
     var headerList = WavHeader.createWavHeader(contentLength);
     setState(() {
@@ -129,10 +141,12 @@ class _DetailPageState extends State<DetailPage> {
     chunks.clear();
   }
 
-  void _onDataReceived(Uint8List data) {
+  void _onDataReceived(Uint8List data) async {
     if (data.isNotEmpty) {
       chunks.add(data);
+      streamPlayer.foodSink!.add(FoodData(data));
       setState(() {
+        // dataStream=data;
         contentLength += data.length;
         _timer!.reset();
       });
@@ -198,7 +212,7 @@ class _DetailPageState extends State<DetailPage> {
                       player.startPlayer(fromURI: _file.path);
                       if (_file.path == selectedFilePath) {
                         print("++++++++++++++++++@@@@@@@@@@@*******************************${_file.path}");
-                        // await player.stop();
+                         await player.stopPlayer();
                         selectedFilePath = '';
                         return;
                       }
@@ -251,6 +265,7 @@ class _DetailPageState extends State<DetailPage> {
             )
         ),
         onPressed: () {
+          // streamPlayer.startPlayer(fromDataBuffer: dataStream,codec: Codec.pcm16);
           if (_recordState == RecordState.stopped) {
             _sendMessage("START");
             _showRecordingDialog();
@@ -262,7 +277,7 @@ class _DetailPageState extends State<DetailPage> {
           padding: const EdgeInsets.all(8.0),
           child: Text(
             _recordState == RecordState.stopped ? "RECORD" : "STOP",
-            style: TextStyle(fontSize: 24),
+            style: const TextStyle(fontSize: 24),
           ),
         ),
       ),
